@@ -12,7 +12,7 @@ public class PoissonDiskSamplingPositionData
         position = Vector2.zero;
     }
 
-    public void SetPosition(Vector2 pos)
+    public virtual void SetPosition(Vector2 pos)
     {
         enable = true;
         position = pos;
@@ -23,7 +23,7 @@ public class PoissonDiskSamplingPositionData
 public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplingPositionData, new()
 {
 
-    struct GridIndex
+    protected struct GridIndex
     {
         public int x;
         public int y;
@@ -58,7 +58,7 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
         }
     }
 
-    protected void SetPoint(T point)
+    protected virtual void SetPoint(T point)
     {
         processList_.Add(point);
         sampleList_.Add(point);
@@ -66,17 +66,26 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
         grid[newIdx.x, newIdx.y] = point;
     }
 
-    protected T InitializeFirstPoint()
+    protected virtual T GeneratePoint(Vector2 pos)
     {
-        T firstPoint = new T();
-        firstPoint.SetPosition(new Vector2(Random.value * width, Random.value * height));
-
-        SetPoint(firstPoint);
-
-        return firstPoint;
+        T point = new T();
+        point.SetPosition(pos);
+        return point;
     }
 
-    public void Sample()
+    protected virtual void InitializeFirstPoint()
+    {
+        T firstPoint = GeneratePoint(new Vector2(Random.value * width, Random.value * height));
+        SetPoint(firstPoint);
+        //return firstPoint;
+    }
+
+    protected virtual float GetminDist(T point)
+    {
+        return minDist;
+    }
+
+    public virtual void Sample()
     {
         gridSize_ = minDist / Mathf.Sqrt(2f);
         gridWidth_ = Mathf.CeilToInt(width / gridSize_);
@@ -89,22 +98,25 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
         sampleList_.Clear();
 
         InitializeGrid();
-        
-        T firstPoint = InitializeFirstPoint();
-        
+
+        //T firstPoint = InitializeFirstPoint();
+        InitializeFirstPoint();
+
         while (processList_.Count > 0)
         {
             T pos = PopRandomProcessList();
+            float mds = GetminDist(pos);
 
             for (int i = 0; i < recursiveCount; i++)
             {
-                T newPos = GenerateRandomPointAround(pos, minDist);
+                T newPos = GenerateRandomPointAround(pos, mds);
+                float newmds = GetminDist(newPos);
 
                 // グリッドの範囲内か？
-                if (!IsInGrid(newPos)) continue;
+                if (!IsInGrid(newPos, newmds)) continue;
 
                 // 周辺グリッドにある点が範囲外なら追加
-                if (!IsInNeighborhood(newPos, minDist))
+                if (!IsInNeighborhood(newPos, newmds))
                 {
                     SetPoint(newPos);
                     continue;
@@ -119,7 +131,7 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
     /// <param name="x"></param>
     /// <param name="y"></param>
     /// <returns></returns>
-    GridIndex GetGridIndex(float x, float y)
+    protected GridIndex GetGridIndex(float x, float y)
     {
         GridIndex idx;
         idx.x = Mathf.FloorToInt(x / gridSize_);
@@ -131,7 +143,7 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
     /// 候補リストからランダムに座標を取り出す
     /// </summary>
     /// <returns></returns>
-    protected T PopRandomProcessList()
+    protected virtual T PopRandomProcessList()
     {
         int idx = Random.Range(0, processList_.Count);
         T pos = processList_[idx];
@@ -145,10 +157,14 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
     /// <param name="p"></param>
     /// <param name="minDistance"></param>
     /// <returns></returns>
-    protected T GenerateRandomPointAround(T p, float minDistance)
+    protected virtual T GenerateRandomPointAround(T p, float minDistance)
     {
-        T newP = new T();
-        newP.SetPosition(p.position + Random.insideUnitCircle * Random.Range(minDistance, minDistance * 2f)); 
+        float rad = Random.value * 2f * Mathf.PI;
+        float length = minDistance + Random.value * minDistance;
+        Vector2 pos;
+        pos.x = Mathf.Cos(rad) * length;
+        pos.y = Mathf.Sin(rad) * length;
+        T newP = GeneratePoint(p.position + pos);
         return newP;
     }
 
@@ -157,9 +173,36 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
     /// </summary>
     /// <param name="p"></param>
     /// <returns></returns>
-    protected bool IsInGrid(T p)
+    protected virtual bool IsInGrid(T p, float minDistance)
     {
         return (p.position.x >= 0f) && (p.position.x <= width) && (p.position.y >= 0f) && (p.position.y <= height);
+    }
+
+    /// <summary>
+    /// POINT同士の距離の比較関数
+    /// </summary>
+    /// <param name="p"></param>
+    /// <param name="p2"></param>
+    /// <param name="minDistance"></param>
+    /// <returns></returns>
+    protected virtual bool IsInDistance(T p, T p2, float minDistance)
+    {
+        float distance = Vector2.Distance(p.position, p2.position);
+        if (distance < minDistance)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 検索するグリッド数
+    /// </summary>
+    /// <returns></returns>
+    protected virtual int GetSearchGridNum()
+    {
+        return 5;
     }
 
     /// <summary>
@@ -168,11 +211,10 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
     /// <param name="p"></param>
     /// <param name="minDistance"></param>
     /// <returns></returns>
-    protected bool IsInNeighborhood(T p, float minDistance)
+    protected virtual bool IsInNeighborhood(T p, float minDistance)
     {
         GridIndex idx = GetGridIndex(p.position.x, p.position.y);
-        const int D = 2;
-
+        int D = GetSearchGridNum();
         int startX = Mathf.Max(idx.x - D, 0);
         int endX = Mathf.Min(idx.x + D, gridWidth_);
         int startY = Mathf.Max(idx.y - D, 0);
@@ -184,11 +226,15 @@ public abstract class PoissonDiskSamplingGeneric<T> where T : PoissonDiskSamplin
             {
                 if (!grid[x, y].enable) continue;
 
-                float distance = Vector2.Distance(p.position, grid[x, y].position);
-                if (distance < minDistance)
+                if(IsInDistance(p, grid[x, y], minDistance))
                 {
                     return true;
                 }
+                //float distance = Vector2.Distance(p.position, grid[x, y].position);
+                //if (distance < minDistance)
+                //{
+                //    return true;
+                //}
             }
         }
 
