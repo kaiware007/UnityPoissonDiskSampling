@@ -10,13 +10,14 @@ public class PoissonDiskSamplingGenericTest : MonoBehaviour {
     public int recursiveCount = 30;
 
     public bool isDispGrid = true;
-
-    PoissonDiskSamplingGenericSample sampling = new PoissonDiskSamplingGenericSample();
     
+    PoissonDiskSamplingGenericSample sampling = new PoissonDiskSamplingGenericSample();
+    List<GameObject> objectList = new List<GameObject>();
+
     // Use this for initialization
     void Start()
     {
-        sampling.Sample();
+        Sample();
     }
 
     // Update is called once per frame
@@ -24,11 +25,31 @@ public class PoissonDiskSamplingGenericTest : MonoBehaviour {
     {
         if (Input.GetKeyDown(KeyCode.I))
         {
-            sampling.minDist = minDist;
-            sampling.width = width;
-            sampling.height = height;
-            sampling.recursiveCount = recursiveCount;
-            sampling.Sample();
+            Sample();
+        }
+    }
+
+    void Sample()
+    {
+        for(int i = 0; i < objectList.Count; i++)
+        {
+            Destroy(objectList[i]);
+        }
+        objectList.Clear();
+
+        sampling.minDist = minDist;
+        sampling.width = width;
+        sampling.height = height;
+        sampling.recursiveCount = recursiveCount;
+        sampling.Sample();
+
+        for (int i = 0; i < sampling.sampleList.Count; i++)
+        {
+            Vector3 pos = new Vector3(sampling.sampleList[i].position.x, 0, sampling.sampleList[i].position.y);
+            GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            obj.transform.position = pos;
+            obj.transform.localScale = Vector3.one * minDist * 0.5f;
+            objectList.Add(obj);
         }
     }
 
